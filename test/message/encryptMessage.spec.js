@@ -1,6 +1,7 @@
 import test from 'ava';
 import '../helper';
 import { util, stream } from 'openpgp';
+import * as streamUtils from 'stream';
 
 import { createMessage, getMessage, getSignature, verifyMessage } from '../../lib/message/utils';
 import encryptMessage from '../../lib/message/encrypt';
@@ -79,6 +80,24 @@ test('it can encrypt and decrypt a message with an encrypted detached signature'
         encryptedSignature: await getMessage(encryptedSignature),
         publicKeys: [decryptedPrivateKey.toPublic()],
         privateKeys: [decryptedPrivateKey]
+    });
+    t.is(decrypted, 'Hello world!');
+    t.is(verified, VERIFICATION_STATUS.SIGNED_AND_VALID);
+});
+
+test('it can encrypt and decrypt a message with an encrypted detached signature when passing single keys rather than arrays', async (t) => {
+    const decryptedPrivateKey = await decryptPrivateKey(testPrivateKeyLegacy, '123');
+    const { data: encrypted, encryptedSignature } = await encryptMessage({
+        message: createMessage('Hello world!'),
+        publicKeys: decryptedPrivateKey.toPublic(),
+        privateKeys: decryptedPrivateKey,
+        detached: true
+    });
+    const { data: decrypted, verified } = await decryptMessage({
+        message: await getMessage(encrypted),
+        encryptedSignature: await getMessage(encryptedSignature),
+        publicKeys: decryptedPrivateKey.toPublic(),
+        privateKeys: decryptedPrivateKey
     });
     t.is(decrypted, 'Hello world!');
     t.is(verified, VERIFICATION_STATUS.SIGNED_AND_VALID);
@@ -212,5 +231,21 @@ test('it can encrypt and decrypt a binary streamed message with in-message signa
         format: 'binary'
     });
     t.is(util.Uint8Array_to_str(await stream.readToEnd(decrypted)), 'Hello world!');
+    t.is(await verified, VERIFICATION_STATUS.SIGNED_AND_VALID);
+});
+
+test('it can encrypt a streaming message and decrypt it with in-message signature', async (t) => {
+    const decryptedPrivateKey = await decryptPrivateKey(testPrivateKeyLegacy, '123');
+    const { data: encrypted, encryptedSignature } = await encryptMessage({
+        message: createMessage(streamUtils.Readable.from('Hello world!')),
+        publicKeys: [decryptedPrivateKey.toPublic()],
+        privateKeys: [decryptedPrivateKey]
+    });
+    const { data: decrypted, verified } = await decryptMessage({
+        message: await getMessage(util.Uint8Array_to_str(await stream.readToEnd(encrypted))),
+        privateKeys: [decryptedPrivateKey],
+        publicKeys: [decryptedPrivateKey.toPublic()]
+    });
+    t.is(decrypted, 'Hello world!');
     t.is(await verified, VERIFICATION_STATUS.SIGNED_AND_VALID);
 });
